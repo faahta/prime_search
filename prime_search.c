@@ -10,7 +10,7 @@ typedef struct prime_search{
 	pthread_mutex_t lock;
 	pthread_cond_t cond;
 	int count;
-	int is_over;
+	int conditionMet;
 	
 }prime_search_t;
 
@@ -31,28 +31,24 @@ search_threads(void *arg){
 
 	int *id = (int *)arg;
 	
-	while(1){
+	while(!p_search.conditionMet){
 		sleep(1);
-		pthread_mutex_lock(&p_search.lock);
-		
-		p_search.num++;
-		if(is_prime(p_search.num)){
-			printf("%d\n",p_search.num);
-			printf("thread %d searching prime: num: %d \n", *id, p_search.num);
-			p_search.count++;
-		}
-		
-		while(p_search.count >= n){
-			pthread_cond_wait(&p_search.cond, &p_search.lock);
-			printf("thread %d exiting\n",*id);
-			p_search.is_over = 1;
-			break;
-		}
-		if(p_search.is_over)
-			break;
+		pthread_mutex_lock(&p_search.lock);	
+			p_search.num++;
+			if(is_prime(p_search.num)){
+				printf("%d\n",p_search.num);
+				printf("thread %d searching prime: num: %d \n", *id, p_search.num);
+				p_search.count++;
+			}			
+			while(p_search.count == n){		
+				p_search.conditionMet = 1;
+				pthread_cond_signal(&p_search.cond);	
+				printf("thread %d exiting\n", *id);	
+				break;
+			}
 		pthread_mutex_unlock(&p_search.lock);
 	}
-	pthread_mutex_unlock(&p_search.lock);
+	
 return NULL;
 
 }
@@ -60,7 +56,7 @@ void
 init(){
 	p_search.num = 1;
 	p_search.count = 0;
-	p_search.is_over = 0;
+	p_search.conditionMet = 0;
 	pthread_mutex_init(&p_search.lock, NULL);
 	pthread_cond_init(&p_search.cond, NULL);
 }
@@ -82,11 +78,13 @@ main(int argc, char *argv[]){
 		sleep(1);
 		pthread_create(&th_sp[i],NULL,search_threads, (void *)pi);
 	}
-	sleep(15);
-	
+
 	pthread_mutex_lock(&p_search.lock);
-	/*wake up all waiting threads*/
-	pthread_cond_broadcast(&p_search.cond);
+	while (!p_search.conditionMet) {
+		pthread_cond_wait(&p_search.cond, &p_search.lock);
+		break;
+	}
+	
 	pthread_mutex_unlock(&p_search.lock);
 	
 	for(i=0;i<t;i++){
